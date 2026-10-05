@@ -109,9 +109,10 @@ def parse_dump(text: str) -> tuple[str, dict[int, str]]:
 
 
 class Backend:
-    def __init__(self, name: str, binary: Path):
+    def __init__(self, name: str, binary: Path, extra: list[str] | None = None):
         self.name = name
         self.bin = str(binary)
+        self.extra = extra or []      # e.g. ["--buggy", "no-log-sync"] for mutation testing
 
     def format(self, img: Path, log_len: int, n_data: int):
         run([self.bin, "format", str(img), "--log", str(log_len), "--data", str(n_data)])
@@ -136,7 +137,7 @@ def one_run(seed: int, be: Backend, tmp: Path) -> dict:
         be.format(img, log_len, n_data)
         # dry run on a copy: how many block operations does the run take?
         shutil.copyfile(img, d / "dry.img")
-        r = run([be.bin, "run", str(d / "dry.img"), str(wl), "--no-fsync"])
+        r = run([be.bin, "run", str(d / "dry.img"), str(wl), "--no-fsync"] + be.extra)
         total = int(re.search(r"ops (\d+)", r.stdout).group(1))
         dry_acks = len(re.findall(r"^ack ", r.stdout, re.M))
         if dry_acks != len(txns):
@@ -145,7 +146,7 @@ def one_run(seed: int, be: Backend, tmp: Path) -> dict:
             k = rnd.randrange(total)
             desc["crash_at"] = k
             cmd = [be.bin, "run", str(img), str(wl), "--crash-at", str(k), "--seed", str(seed),
-                   "--no-fsync"] + (["--torn"] if mode == "torn" else [])
+                   "--no-fsync"] + (["--torn"] if mode == "torn" else []) + be.extra
             r = run(cmd, ok=(CRASH,))
             out = r.stdout
         else:
@@ -154,7 +155,7 @@ def one_run(seed: int, be: Backend, tmp: Path) -> dict:
             when = rnd.uniform(0, est * 1.2)
             desc["kill_after_s"] = round(when, 4)
             p = subprocess.Popen([be.bin, "run", str(img), str(wl), "--no-fsync",
-                                  "--delay-us", str(delay_us)],
+                                  "--delay-us", str(delay_us)] + be.extra,
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             time.sleep(when)
             p.kill()
@@ -174,15 +175,15 @@ def one_run(seed: int, be: Backend, tmp: Path) -> dict:
         desc["recovery_crashes"] = 0
         for i in range(nested):
             shutil.copyfile(img, d / "dryrec.img")
-            rr = run([be.bin, "recover", str(d / "dryrec.img"), "--no-fsync"])
+            rr = run([be.bin, "recover", str(d / "dryrec.img"), "--no-fsync"] + be.extra)
             n = int(re.search(r"ops (\d+)", rr.stdout).group(1))
             if n == 0:
                 break
             k2 = rnd.randrange(n)
             run([be.bin, "recover", str(img), "--crash-at", str(k2), "--seed", str(seed * 10 + i),
-                 "--no-fsync"] + (["--torn"] if mode == "torn" else []), ok=(CRASH,))
+                 "--no-fsync"] + (["--torn"] if mode == "torn" else []) + be.extra, ok=(CRASH,))
             desc["recovery_crashes"] += 1
-        run([be.bin, "recover", str(img), "--no-fsync"])
+        run([be.bin, "recover", str(img), "--no-fsync"] + be.extra)
         header, blocks = parse_dump(run([be.bin, "dump", str(img)]).stdout)
         if header != "header empty":
             raise Failure(f"after recovery the header is not empty: {header}")
@@ -216,12 +217,13 @@ def main() -> int:
     ap.add_argument("--jobs", type=int, default=4)
     ap.add_argument("--json", type=Path)
     ap.add_argument("--quiet", action="store_true")
+    ap.add_argument("--buggy", help="run a deliberately broken protocol (mutation testing)")
     a = ap.parse_args()
     binary = a.bin or DEFAULT_BIN[a.backend]
     if not binary.exists():
         print(f"missing {binary}: build it first", file=sys.stderr)
         return 2
-    be = Backend(a.backend, binary)
+    be = Backend(a.backend, binary, ["--buggy", a.buggy] if a.buggy else [])
     seeds = [int(s) for s in a.seeds.split(",") if s] or \
         list(range(a.first_seed, a.first_seed + a.runs))
     tmp = Path(tempfile.mkdtemp(prefix="crashtest-"))
