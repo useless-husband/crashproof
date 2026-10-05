@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang=en>
+<head>
+<meta charset=utf-8>
+<meta name=viewport content="width=device-width, initial-scale=1">
+<title>crashproof results</title>
+<style>
+:root {
+  --bg:#ffffff; --fg:#1a1a1a; --muted:#666; --line:#e2e2e2; --card:#f7f7f6;
+  --ok-bg:#e6f4ea; --ok-fg:#1e6b33; --bad-bg:#fbe9e7; --bad-fg:#b3261e; --mono:#f0f0ef;
+}
+:root:not([data-theme=light]) { }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme=light]) {
+    --bg:#16181c; --fg:#e7e7e7; --muted:#9aa0a6; --line:#2c2f35; --card:#1e2127;
+    --ok-bg:#133620; --ok-fg:#7fd49a; --bad-bg:#3a1f1c; --bad-fg:#f0a39a; --mono:#242730;
+  }
+}
+:root[data-theme=dark] {
+  --bg:#16181c; --fg:#e7e7e7; --muted:#9aa0a6; --line:#2c2f35; --card:#1e2127;
+  --ok-bg:#133620; --ok-fg:#7fd49a; --bad-bg:#3a1f1c; --bad-fg:#f0a39a; --mono:#242730;
+}
+* { box-sizing:border-box; }
+body { background:var(--bg); color:var(--fg); margin:0;
+  font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang TC","Microsoft JhengHei",sans-serif; }
+main { max-width:900px; margin:0 auto; padding:32px 16px 64px; }
+h1 { font-size:26px; margin:0 0 4px; }
+h2 { font-size:20px; margin:36px 0 10px; border-bottom:1px solid var(--line); padding-bottom:6px; }
+h3 { font-size:16px; margin:20px 0 8px; }
+p { margin:8px 0; }
+.muted { color:var(--muted); font-size:13px; }
+code { background:var(--mono); padding:1px 5px; border-radius:4px; font-size:13px; }
+table { border-collapse:collapse; width:100%; margin:10px 0; font-size:14px; }
+th,td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+th { color:var(--muted); font-weight:600; font-size:13px; }
+td.num,td.mono { font-variant-numeric:tabular-nums; }
+td.mono { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; }
+.cards { display:flex; flex-wrap:wrap; gap:16px; }
+.card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; flex:1 1 320px; }
+.pill,.pill-ok,.pill-bad { display:inline-block; padding:2px 9px; border-radius:999px; font-size:12px; font-weight:600; }
+.pill.ok,.pill-ok { background:var(--ok-bg); color:var(--ok-fg); }
+.pill.bad,.pill-bad { background:var(--bad-bg); color:var(--bad-fg); }
+</style>
+</head>
+<body><main>
+<h1>crashproof &mdash; results</h1>
+<p class=muted>A write-ahead log whose crash-safety is proved in Lean 4, then the compiled
+program is crash-tested against the proved model. A learning reimplementation of FSCQ's ideas.</p>
+
+<h2>Theorems</h2>
+<p>Every statement holds for all executions: a crash may strike before any block operation,
+the drive may lose, reorder or tear any write since the last sync, and recovery may itself
+crash any number of times. The axiom column is <code>#print axioms</code> output.</p>
+<table><thead><tr><th>theorem</th><th>in plain words</th><th>axioms</th></tr></thead><tbody>
+<tr><td><b>Atomicity</b><div class=muted><code>Crashproof.*.atomicity</code></div></td><td>If a crash happens at any point during commit, then after recovery the logical disk equals either the state before the transaction or the state after it.</td><td class=mono>propext, Classical.choice, Quot.sound <span class='pill ok'>standard axioms</span></td></tr>
+<tr><td><b>Durability</b><div class=muted><code>Crashproof.*.durability</code></div></td><td>Once commit returns, the logical disk is the transaction&#x27;s result, and any crash from then on recovers to exactly that result.</td><td class=mono>propext, Classical.choice, Quot.sound <span class='pill ok'>standard axioms</span></td></tr>
+<tr><td><b>Idempotent recovery</b><div class=muted><code>Crashproof.*.recovery_idempotent</code></div></td><td>However many times recovery itself crashes and restarts, once a recovery completes the log is idle and the logical disk is the one the first crash determined.</td><td class=mono>propext, Quot.sound <span class='pill ok'>standard axioms</span></td></tr>
+<tr><td><b>Reads in a transaction</b><div class=muted><code>Crashproof.*.get_correct</code></div></td><td>A read inside a transaction returns the transaction&#x27;s own writes, and the committed disk for every other block; it changes nothing on disk.</td><td class=mono>propext <span class='pill ok'>standard axioms</span></td></tr>
+<tr><td><b>Writes in a transaction</b><div class=muted><code>Crashproof.*.put_correct</code></div></td><td>Recording a write changes exactly one block of the transaction&#x27;s logical disk and keeps each block logged at most once.</td><td class=mono>propext, Quot.sound <span class='pill ok'>standard axioms</span></td></tr>
+<tr><td><b>Sequences of transactions</b><div class=muted><code>Crashproof.*.commitAll_spec</code></div></td><td>A crash anywhere in a run of transactions recovers to the state after some prefix of them -- never to a state with a transaction half applied.</td><td class=mono>propext, Classical.choice, Quot.sound <span class='pill ok'>standard axioms</span></td></tr>
+<tr><td><b>Crash while idle</b><div class=muted><code>Crashproof.*.crash_while_idle</code></div></td><td>A crash while no commit is running loses only the uncommitted, in-memory transaction.</td><td class=mono>propext, Quot.sound <span class='pill ok'>standard axioms</span></td></tr>
+<tr><td><b>Commit (Crash Hoare triple)</b><div class=muted><code>Crashproof.*.commit_spec</code></div></td><td>The full pre / post / crash specification of commit, in the style of Crash Hoare Logic.</td><td class=mono>propext, Classical.choice, Quot.sound <span class='pill ok'>standard axioms</span></td></tr>
+<tr><td><b>Recovery (Crash Hoare triple)</b><div class=muted><code>Crashproof.*.recover_spec</code></div></td><td>The full specification of recovery: it ends idle, and a crash leaves a state recovery handles identically next time.</td><td class=mono>propext, Quot.sound <span class='pill ok'>standard axioms</span></td></tr>
+</tbody></table>
+<p class=muted>Checked in CI by <code>scripts/check-proofs.sh</code>: no <code>sorry</code>, and
+only Lean's three standard axioms (<code>propext</code>, <code>Classical.choice</code>,
+<code>Quot.sound</code>).</p>
+
+<h2>Crash harness</h2>
+<p>Model-based testing of the native executable: a random workload is run and the power is
+cut (inject / torn / kill); the recovered image must equal the model's state after every
+acknowledged transaction, optionally plus the one in flight &mdash; nothing else.</p>
+<div class=cards>
+<div class=card>
+<h3>crashproof (this project)</h3>
+<p><span class="pill ok">2000/2000 recovered to an allowed state</span></p>
+<table><tbody>
+<tr><td>crash modes</td><td class=num>inject 1004, kill 505, torn 491</td></tr>
+<tr><td>crashes injected during recovery</td><td class=num>2417</td></tr>
+<tr><td>all committed</td><td class=num>2</td></tr><tr><td>in-flight applied</td><td class=num>893</td></tr><tr><td>in-flight lost</td><td class=num>1105</td></tr>
+</tbody></table>
+<p class=muted>fixed seeds [1, 2000], 32.7 s on an Apple M-series, shared machine</p>
+</div>
+<div class=card>
+<h3>wren-os log (kernel/log.c, unmodified)</h3>
+<p><span class="pill ok">2000/2000 recovered to an allowed state</span></p>
+<table><tbody>
+<tr><td>crash modes</td><td class=num>inject 1004, kill 505, torn 491</td></tr>
+<tr><td>crashes injected during recovery</td><td class=num>1319</td></tr>
+<tr><td>all committed</td><td class=num>33</td></tr><tr><td>in-flight applied</td><td class=num>1105</td></tr><tr><td>in-flight lost</td><td class=num>862</td></tr>
+</tbody></table>
+<p class=muted>fixed seeds [1, 2000], 24.3 s on an Apple M-series, shared machine</p>
+</div>
+</div>
+
+<h2>Mutation checks</h2>
+<p>Each one-line protocol bug must either stop the proofs compiling or be caught by the
+crash harness. Proof mutants edit the real protocol in <code>Crashproof/Log.lean</code>;
+harness mutants run broken protocols from <code>App/Buggy.lean</code>.</p>
+<h3>Proof mutants (must fail to compile)</h3>
+<table><thead><tr><th>mutant</th><th>what it removes</th><th>result</th></tr></thead><tbody><tr><td class=mono>no-log-sync</td><td>no barrier between the log slots and the commit-point header</td><td><span class=pill-ok>proof fails to compile</span></td></tr><tr><td class=mono>no-install-sync</td><td>no barrier between installing and retiring the header</td><td><span class=pill-ok>proof fails to compile</span></td></tr><tr><td class=mono>no-clear</td><td>the header is never retired after install</td><td><span class=pill-ok>proof fails to compile</span></td></tr><tr><td class=mono>no-clear-sync</td><td>the retired header is not synced (wren-os&#x27;s choice, without its CRC)</td><td><span class=pill-ok>proof fails to compile</span></td></tr><tr><td class=mono>hdr-wrong-list</td><td>the header lists only the first logged address</td><td><span class=pill-ok>proof fails to compile</span></td></tr><tr><td class=mono>rec-no-sync</td><td>recovery retires the header before its replay is durable</td><td><span class=pill-ok>proof fails to compile</span></td></tr></tbody></table>
+<h3>Harness mutants (must be caught)</h3>
+<table><thead><tr><th>broken protocol</th><th>runs in a wrong state</th><th>result</th></tr></thead><tbody><tr><td class=mono>no-log-sync</td><td class=num>35/1000 runs land in a wrong state</td><td><span class=pill-ok>caught</span> (first seed 16)</td></tr><tr><td class=mono>hdr-first</td><td class=num>92/1000 runs land in a wrong state</td><td><span class=pill-ok>caught</span> (first seed 3)</td></tr><tr><td class=mono>no-install-sync</td><td class=num>18/1000 runs land in a wrong state</td><td><span class=pill-ok>caught</span> (first seed 105)</td></tr><tr><td class=mono>no-clear</td><td class=num>182/1000 runs land in a wrong state</td><td><span class=pill-ok>caught</span> (first seed 2)</td></tr><tr><td class=mono>no-clear-sync</td><td class=num>34/1000 runs land in a wrong state</td><td><span class=pill-ok>caught</span> (first seed 33)</td></tr><tr><td class=mono>rec-no-clear</td><td class=num>459/1000 runs land in a wrong state</td><td><span class=pill-ok>caught</span> (first seed 2)</td></tr><tr><td class=mono>rec-no-sync</td><td class=num>24/1000 runs land in a wrong state</td><td><span class=pill-ok>caught</span> (first seed 2)</td></tr></tbody></table>
+
+<h2>What the proofs do and do not cover</h2>
+<p>The proofs are about the model in <code>Crashproof/Disk.lean</code> and the protocol in
+<code>Crashproof/Log.lean</code>. They do <b>not</b> cover the Lean compiler, the ~90 lines of
+C in <code>native/dev.c</code>, the operating system, or the drive's firmware &mdash; the
+trusted base. The crash harness exists precisely to test that untrusted bridge; it found no
+discrepancy in 2000 crashproof runs
+and 2000 wren-os runs.</p>
+</main></body></html>

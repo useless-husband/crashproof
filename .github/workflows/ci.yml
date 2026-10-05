@@ -1,0 +1,71 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  proofs:
+    name: proofs and axioms
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: install elan (the Lean version comes from lean-toolchain)
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+            | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - name: build, reject sorry, print axioms
+        run: ./scripts/check-proofs.sh
+
+  harness:
+    name: executable and crash harness (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: install elan
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+            | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: build the executable
+        run: lake build
+      - name: crash harness (crashproof backend)
+        run: python3 harness/crashtest.py --runs 1500 --jobs 4
+      - name: mutation checks (harness mutants only; proof mutants are slow)
+        run: python3 harness/mutants.py --runs 400 --skip-proofs
+
+  wren-diff:
+    name: differential test against wren-os
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: check out wren-os (read-only, public)
+        uses: actions/checkout@v4
+        with:
+          repository: useless-husband/wren-os
+          path: wren-os-src
+      - name: install elan
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh \
+            | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> "$GITHUB_PATH"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: lake build
+      - name: build wren-os's log on the host (its kernel/log.c, unmodified)
+        run: WREN="$GITHUB_WORKSPACE/wren-os-src" bash wren/build.sh
+      - name: same crash harness, wren-os backend
+        run: python3 harness/crashtest.py --backend wren --runs 1500 --jobs 4
