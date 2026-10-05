@@ -20,6 +20,10 @@
  *
  * This file is MINE. kernel/log.c and lib/crc32c.c are compiled from the
  * wren-os repository as they are; see wren/README.md. */
+/* pread, pwrite and usleep are POSIX/BSD; glibc hides them under -std=c11 */
+#ifndef _DEFAULT_SOURCE
+#define _DEFAULT_SOURCE
+#endif
 #include "types.h"
 #include "spinlock.h"
 #include "bio.h"
